@@ -1,0 +1,63 @@
+name: Inject SEO Tags
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'seo-head.html'  # changes to SEO file are handled separately
+
+jobs:
+  inject-seo:
+    # Skip if this commit was made by the bot (prevents infinite loop)
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Inject SEO tags into index.html
+        run: |
+          python3 << 'PYEOF'
+          import re, sys
+
+          with open('index.html', 'r', encoding='utf-8') as f:
+              html = f.read()
+
+          with open('seo-head.html', 'r', encoding='utf-8') as f:
+              seo_block = f.read().strip()
+
+          # If markers already exist, replace the content between them
+          if '<!-- SEO START' in html and '<!-- SEO END -->' in html:
+              updated = re.sub(
+                  r'<!-- SEO START.*?<!-- SEO END -->',
+                  seo_block,
+                  html,
+                  flags=re.DOTALL
+              )
+              print("SEO block updated between existing markers.")
+          else:
+              # No markers — inject right after <head>
+              updated = html.replace('<head>', '<head>\n' + seo_block, 1)
+              print("SEO block injected after <head> (no markers found).")
+
+          if updated == html:
+              print("No changes needed — SEO tags already up to date.")
+              sys.exit(0)
+
+          with open('index.html', 'w', encoding='utf-8') as f:
+              f.write(updated)
+
+          print("index.html updated successfully.")
+          PYEOF
+
+      - name: Commit updated index.html
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && echo "Nothing to commit." || \
+            git commit -m "chore: auto-inject SEO tags [skip ci]"
+
+      - name: Push changes
+        run: git push
